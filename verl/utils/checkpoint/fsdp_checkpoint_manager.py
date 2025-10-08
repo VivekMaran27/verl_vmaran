@@ -15,6 +15,7 @@
 import json
 import logging
 import os
+import time
 import warnings
 from dataclasses import asdict, dataclass
 from typing import Optional
@@ -234,15 +235,24 @@ class FSDPCheckpointManager(BaseCheckpointManager):
                 optim_path = os.path.join(local_path, f"optim_world_size_{self.world_size}_rank_{self.rank}.pt")
                 extra_path = os.path.join(local_path, f"extra_state_world_size_{self.world_size}_rank_{self.rank}.pt")
 
+                total_save_time = 0
                 if self.should_save_model:
                     model_state_dict = self.model.state_dict()
+                    start_time = time.time()
                     torch.save(model_state_dict, model_path)
-                    log_with_rank(f"Saved model to {os.path.abspath(model_path)}", rank=self.rank, logger=logger)
+                    save_time = time.time() - start_time
+                    total_save_time += save_time
+                    log_with_rank(f"Saved model to {os.path.abspath(model_path)} (took {save_time:.2f}s)",
+                                  rank=self.rank, logger=logger)
 
                 if self.should_save_optimizer:
                     optimizer_state_dict = self.optimizer.state_dict()
+                    start_time = time.time()
                     torch.save(optimizer_state_dict, optim_path)
-                    log_with_rank(f"Saved optim to {os.path.abspath(optim_path)}", rank=self.rank, logger=logger)
+                    save_time = time.time() - start_time
+                    total_save_time += save_time
+                    log_with_rank(f"Saved optim to {os.path.abspath(optim_path)} (took {save_time:.2f}s)",
+                                  rank=self.rank, logger=logger)
 
                 if self.should_save_extra:
                     lr_scheduler_state_dict = self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None
@@ -250,8 +260,13 @@ class FSDPCheckpointManager(BaseCheckpointManager):
                         "lr_scheduler": lr_scheduler_state_dict,
                         "rng": self.get_rng_state(),
                     }
+                    start_time = time.time()
                     torch.save(extra_state_dict, extra_path)
-                    log_with_rank(f"Saved extra_state to {os.path.abspath(extra_path)}", rank=self.rank, logger=logger)
+                    save_time = time.time() - start_time
+                    total_save_time += save_time
+                    log_with_rank(f"Saved extra_state to {os.path.abspath(extra_path)} (took {save_time:.2f}s)",
+                                  rank=self.rank, logger=logger)
+                log_with_rank(f"Total save time: {total_save_time:.2f}s", rank=self.rank, logger=logger)
 
         if self.rank == 0:
             # Save HF tokenizer/processor and model config on rank 0 to huggingface/ directory, no matter whether
